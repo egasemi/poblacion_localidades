@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Localidades por Población</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: sans-serif;
+    }
+
+    #container {
+      display: flex;
+      height: 100%;
+    }
+
+    #map {
+      flex: 3;
+    }
+
+    #sidebar {
+      flex: 1;
+      padding: 20px;
+      background: #f4f4f4;
+      box-shadow: -2px 0 5px rgba(0, 0, 0, 0.1);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .input-group label {
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .input-group input {
+      padding: 8px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      text-align: right;
+    }
+
+    #filterBtn {
+      margin-top: 10px;
+      padding: 10px;
+      font-size: 16px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    #filterBtn:hover {
+      background-color: #0056b3;
+    }
+
+    #resumen {
+      padding: 15px;
+      background: #ffffff;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+    }
+
+    #resumen h2 {
+      margin-top: 0;
+      font-size: 18px;
+    }
+
+    #resumen p {
+      margin: 5px 0;
+    }
+  </style>
+</head>
+<body>
+    <div id="container">
+        <div id="map"></div>
+        <div id="sidebar">
+          <div class="input-group">
+            <label for="minPop">Población mínima:</label>
+            <input type="text" id="minPop" value="0" />
+          </div>
+          <div class="input-group">
+            <label for="maxPop">Población máxima:</label>
+            <input type="text" id="maxPop" value="1.000.000" />
+            <button id="filterBtn">Filtrar</button>
+          </div>
+          <div id="resumen">
+            <h2>Resumen</h2>
+            <p><strong>Localidades filtradas:</strong> <span id="count">0</span><span id="percentCount"> (0%)</span></p>
+            <p><strong>Total población filtrada:</strong> <span id="totalPop">0</span><span id="percentPop"> (0%)</span></p>
+          </div>
+        </div>
+    </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    let map = L.map('map').setView([-32.9, -60.7], 6);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    let geojsonLayer;
+    let allFeatures = [];
+
+    function parseFormatted(value) {
+      return Number(value.replace(/\./g, '').replace(/,/g, ''));
+    }
+
+    function formatNumber(num) {
+      return num.toLocaleString('es-AR');
+    }
+
+    function getValidPopulation(feature) {
+      let value = feature.properties?.poblacion_indec_poblacion;
+      if (value == null) return 0;
+      if (typeof value === 'string') {
+        const cleaned = value.replace(/,/g, '').replace(/\./g, '');
+        const number = parseFloat(cleaned);
+        return isNaN(number) ? 0 : number;
+      }
+      if (typeof value === 'number') return value;
+      return 0;
+    }
+
+    fetch('localidades_con_poblacion.geojson')
+      .then(res => res.json())
+      .then(data => {
+        allFeatures = data.features;
+
+        geojsonLayer = L.geoJSON(data, {
+          style: defaultStyle,
+          onEachFeature: (feature, layer) => {
+            const pop = getValidPopulation(feature);
+            layer.bindPopup(`<strong>${feature.properties.nam || "Localidad"}</strong><br>Población: ${formatNumber(pop)}`);
+          }
+        }).addTo(map);
+
+        updateSummary(allFeatures, allFeatures);
+      });
+
+    function defaultStyle() {
+      return { color: "#3388ff", weight: 1, fillOpacity: 0.4 };
+    }
+
+    function highlightStyle() {
+      return { color: "#ff7800", weight: 2, fillOpacity: 0.7 };
+    }
+
+    document.getElementById('filterBtn').addEventListener('click', () => {
+      const minPop = parseFormatted(document.getElementById('minPop').value) || 0;
+      const maxPop = parseFormatted(document.getElementById('maxPop').value) || Infinity;
+
+      const filtered = allFeatures.filter(f => {
+        const pop = getValidPopulation(f);
+        return pop >= minPop && pop <= maxPop;
+      });
+
+      if (geojsonLayer) map.removeLayer(geojsonLayer);
+
+      geojsonLayer = L.geoJSON(allFeatures, {
+        style: feature => {
+          const pop = getValidPopulation(feature);
+          return (pop >= minPop && pop <= maxPop) ? highlightStyle() : defaultStyle();
+        },
+        onEachFeature: (feature, layer) => {
+          const pop = getValidPopulation(feature);
+          layer.bindPopup(`<strong>${feature.properties.nam || "Localidad"}</strong><br>Población: ${formatNumber(pop)}`);
+        }
+      }).addTo(map);
+
+      updateSummary(allFeatures, filtered);
+    });
+
+    function updateSummary(all, filtered) {
+      const totalLocalidades = all.length;
+      const totalHabitantes = all.reduce((sum, f) => sum + getValidPopulation(f), 0);
+      const filtradas = filtered.length;
+      const habitantesFiltrados = filtered.reduce((sum, f) => sum + getValidPopulation(f), 0);
+
+      document.getElementById("count").innerText = formatNumber(filtradas);
+      document.getElementById("totalPop").innerText = formatNumber(habitantesFiltrados);
+      document.getElementById("percentPop").innerText = ` (${((habitantesFiltrados / totalHabitantes) * 100).toFixed(1)}%)`;
+      document.getElementById("percentCount").innerText = ` (${((filtradas / totalLocalidades) * 100).toFixed(1)}%)`;
+    }
+
+    // Formatear inputs al escribir
+    document.getElementById('minPop').addEventListener('input', e => {
+      const num = parseFormatted(e.target.value);
+      e.target.value = formatNumber(isNaN(num) ? 0 : num);
+    });
+
+    document.getElementById('maxPop').addEventListener('input', e => {
+      const num = parseFormatted(e.target.value);
+      e.target.value = formatNumber(isNaN(num) ? 0 : num);
+    });
+  </script>
+</body>
+</html>
