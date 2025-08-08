@@ -89,11 +89,11 @@
         <div id="sidebar">
           <div class="input-group">
             <label for="minPop">Población mínima:</label>
-            <input type="text" id="minPop" value="0" />
+            <input type="text" id="minPop" value="30.000" />
           </div>
           <div class="input-group">
             <label for="maxPop">Población máxima:</label>
-            <input type="text" id="maxPop" value="1.000.000" />
+            <input type="text" id="maxPop" value="0" />
             <button id="filterBtn">Filtrar</button>
           </div>
           <div id="resumen">
@@ -139,16 +139,7 @@
       .then(res => res.json())
       .then(data => {
         allFeatures = data.features;
-
-        geojsonLayer = L.geoJSON(data, {
-          style: defaultStyle,
-          onEachFeature: (feature, layer) => {
-            const pop = getValidPopulation(feature);
-            layer.bindPopup(`<strong>${feature.properties.nam || "Localidad"}</strong><br>Población: ${formatNumber(pop)}`);
-          }
-        }).addTo(map);
-
-        updateSummary(allFeatures, allFeatures);
+        drawMap(allFeatures, allFeatures);
       });
 
     function defaultStyle() {
@@ -159,7 +150,7 @@
       return { color: "#ff7800", weight: 2, fillOpacity: 0.7 };
     }
 
-    document.getElementById('filterBtn').addEventListener('click', () => {
+    function filterMap() {
       const minPop = parseFormatted(document.getElementById('minPop').value) || 0;
       const maxPop = parseFormatted(document.getElementById('maxPop').value) || Infinity;
 
@@ -168,12 +159,16 @@
         return pop >= minPop && pop <= maxPop;
       });
 
+      drawMap(allFeatures, filtered);
+    }
+
+    function drawMap(all, filtered) {
       if (geojsonLayer) map.removeLayer(geojsonLayer);
 
-      geojsonLayer = L.geoJSON(allFeatures, {
+      geojsonLayer = L.geoJSON(all, {
         style: feature => {
           const pop = getValidPopulation(feature);
-          return (pop >= minPop && pop <= maxPop) ? highlightStyle() : defaultStyle();
+          return (filtered.includes(feature)) ? highlightStyle() : defaultStyle();
         },
         onEachFeature: (feature, layer) => {
           const pop = getValidPopulation(feature);
@@ -181,8 +176,8 @@
         }
       }).addTo(map);
 
-      updateSummary(allFeatures, filtered);
-    });
+      updateSummary(all, filtered);
+    }
 
     function updateSummary(all, filtered) {
       const totalLocalidades = all.length;
@@ -193,19 +188,18 @@
       document.getElementById("count").innerText = formatNumber(filtradas);
       document.getElementById("totalPop").innerText = formatNumber(habitantesFiltrados);
       document.getElementById("percentPop").innerText = ` (${((habitantesFiltrados / totalHabitantes) * 100).toFixed(1)}%)`;
-      document.getElementById("percentCount").innerText = ` (${((filtradas / totalLocalidades) * 100).toFixed(1)}%)`;
+      document.getElementById("percentPop").innerText = ` (${((filtradas / totalLocalidades) * 100).toFixed(1)}%)`;
     }
 
-    // Formatear inputs al escribir
-    document.getElementById('minPop').addEventListener('input', e => {
+    function handleInput(e) {
       const num = parseFormatted(e.target.value);
       e.target.value = formatNumber(isNaN(num) ? 0 : num);
-    });
+      filterMap();
+    }
 
-    document.getElementById('maxPop').addEventListener('input', e => {
-      const num = parseFormatted(e.target.value);
-      e.target.value = formatNumber(isNaN(num) ? 0 : num);
-    });
+    document.getElementById('minPop').addEventListener('input', handleInput);
+    document.getElementById('maxPop').addEventListener('input', handleInput);
+    document.getElementById('filterBtn').addEventListener('click', filterMap);
   </script>
 </body>
 </html>
