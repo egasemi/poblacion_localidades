@@ -187,8 +187,8 @@
 
       document.getElementById("count").innerText = formatNumber(filtradas);
       document.getElementById("totalPop").innerText = formatNumber(habitantesFiltrados);
-      document.getElementById("percentPop").innerText = ` (${((habitantesFiltrados / totalHabitantes) * 100).toFixed(1)}%)`;
-      document.getElementById("percentPop").innerText = ` (${((filtradas / totalLocalidades) * 100).toFixed(1)}%)`;
+      document.getElementById("percentPop").innerText = ` (${((habitantesFiltrados / totalHabitantes) * 100).toFixed(2)}%)`;
+      document.getElementById("percentCount").innerText = ` (${((filtradas / totalLocalidades) * 100).toFixed(2)}%)`;
     }
 
     function handleInput(e) {
