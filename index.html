@@ -107,22 +107,23 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
     let map = L.map('map').setView([-32.9, -60.7], 6);
-
+  
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
-
+  
     let geojsonLayer;
     let allFeatures = [];
-
+    let selectedLocalidades = [];
+  
     function parseFormatted(value) {
       return Number(value.replace(/\./g, '').replace(/,/g, ''));
     }
-
+  
     function formatNumber(num) {
       return num.toLocaleString('es-AR');
     }
-
+  
     function getValidPopulation(feature) {
       let value = feature.properties?.poblacion_indec_poblacion;
       if (value == null) return 0;
@@ -134,72 +135,137 @@
       if (typeof value === 'number') return value;
       return 0;
     }
-
+  
     fetch('localidades_con_poblacion.geojson')
       .then(res => res.json())
       .then(data => {
         allFeatures = data.features;
         drawMap(allFeatures, allFeatures);
+        setupSearch(allFeatures);
       });
-
+  
     function defaultStyle() {
       return { color: "#3388ff", weight: 1, fillOpacity: 0.4 };
     }
-
+  
     function highlightStyle() {
       return { color: "#ff7800", weight: 2, fillOpacity: 0.7 };
     }
-
+  
     function filterMap() {
       const minPop = parseFormatted(document.getElementById('minPop').value) || 0;
       const maxPop = parseFormatted(document.getElementById('maxPop').value) || Infinity;
-
+  
       const filtered = allFeatures.filter(f => {
         const pop = getValidPopulation(f);
         return pop >= minPop && pop <= maxPop;
       });
-
+  
       drawMap(allFeatures, filtered);
     }
-
+  
     function drawMap(all, filtered) {
       if (geojsonLayer) map.removeLayer(geojsonLayer);
-
+  
       geojsonLayer = L.geoJSON(all, {
         style: feature => {
           const pop = getValidPopulation(feature);
-          return (filtered.includes(feature)) ? highlightStyle() : defaultStyle();
+          const isFiltered = filtered.includes(feature);
+          const isSelected = selectedLocalidades.some(s => s.id === feature.properties.nam);
+          if (isSelected) return { color: "#28a745", weight: 3, fillOpacity: 0.7 };
+          return isFiltered ? highlightStyle() : defaultStyle();
         },
         onEachFeature: (feature, layer) => {
           const pop = getValidPopulation(feature);
           layer.bindPopup(`<strong>${feature.properties.nam || "Localidad"}</strong><br>Población: ${formatNumber(pop)}`);
         }
       }).addTo(map);
-
+  
       updateSummary(all, filtered);
     }
-
+  
     function updateSummary(all, filtered) {
       const totalLocalidades = all.length;
       const totalHabitantes = all.reduce((sum, f) => sum + getValidPopulation(f), 0);
       const filtradas = filtered.length;
       const habitantesFiltrados = filtered.reduce((sum, f) => sum + getValidPopulation(f), 0);
-
+  
       document.getElementById("count").innerText = formatNumber(filtradas);
       document.getElementById("totalPop").innerText = formatNumber(habitantesFiltrados);
       document.getElementById("percentPop").innerText = ` (${((habitantesFiltrados / totalHabitantes) * 100).toFixed(2)}%)`;
       document.getElementById("percentCount").innerText = ` (${((filtradas / totalLocalidades) * 100).toFixed(2)}%)`;
     }
-
+  
     function handleInput(e) {
       const num = parseFormatted(e.target.value);
       e.target.value = formatNumber(isNaN(num) ? 0 : num);
       filterMap();
     }
-
+  
     document.getElementById('minPop').addEventListener('input', handleInput);
     document.getElementById('maxPop').addEventListener('input', handleInput);
     document.getElementById('filterBtn').addEventListener('click', filterMap);
+  
+    // 🟩 NUEVO: Configurar buscador con sumador
+    function setupSearch(features) {
+      const searchContainer = document.createElement("div");
+      searchContainer.className = "input-group";
+      searchContainer.innerHTML = `
+        <label for="searchInput">Buscar localidad:</label>
+        <input type="text" id="searchInput" list="localidadesList" placeholder="Escriba para buscar...">
+        <datalist id="localidadesList"></datalist>
+        <ul id="seleccionadas" style="margin-top:10px; padding-left:15px;"></ul>
+        <p><strong>Suma total seleccionada:</strong> <span id="totalSeleccionadas">0</span></p>
+      `;
+      document.getElementById("sidebar").prepend(searchContainer);
+  
+      const list = document.getElementById("localidadesList");
+      features
+        .map(f => f.properties.nam)
+        .sort()
+        .forEach(n => {
+          const opt = document.createElement("option");
+          opt.value = n;
+          list.appendChild(opt);
+        });
+  
+      const input = document.getElementById("searchInput");
+      input.addEventListener("change", () => {
+        const nombre = input.value.trim();
+        const feature = features.find(f => f.properties.nam === nombre);
+        if (!feature) return;
+        if (!selectedLocalidades.some(s => s.id === nombre)) {
+          selectedLocalidades.push({
+            id: nombre,
+            pop: getValidPopulation(feature)
+          });
+          updateSelectedList();
+          drawMap(allFeatures, allFeatures);
+        }
+        input.value = "";
+      });
+    }
+  
+    function updateSelectedList() {
+      const list = document.getElementById("seleccionadas");
+      list.innerHTML = "";
+      selectedLocalidades.forEach((loc, index) => {
+        const li = document.createElement("li");
+        li.innerHTML = `${loc.id} - ${formatNumber(loc.pop)} hab <button data-index="${index}">❌</button>`;
+        list.appendChild(li);
+      });
+      document.querySelectorAll("#seleccionadas button").forEach(btn => {
+        btn.addEventListener("click", e => {
+          const index = parseInt(e.target.dataset.index);
+          selectedLocalidades.splice(index, 1);
+          updateSelectedList();
+          drawMap(allFeatures, allFeatures);
+        });
+      });
+      const total = selectedLocalidades.reduce((sum, l) => sum + l.pop, 0);
+      document.getElementById("totalSeleccionadas").innerText = formatNumber(total);
+    }
   </script>
+  
 </body>
 </html>
